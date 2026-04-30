@@ -2,7 +2,7 @@ locals {
   name_prefix = "${var.project_name}-${var.environment}"
 }
 
-# ── SageMaker execution role ──────────────────────────────────────────────────
+# ── Shared assume-role policy (SageMaker service principal) ───────────────────
 
 data "aws_iam_policy_document" "sagemaker_assume_role" {
   statement {
@@ -15,6 +15,9 @@ data "aws_iam_policy_document" "sagemaker_assume_role" {
     }
   }
 }
+
+# ── SageMaker Studio execution role (domain / user-profile level) ─────────────
+# Used by Studio apps and notebook instances as the interactive workspace role.
 
 resource "aws_iam_role" "sagemaker_execution" {
   name               = "${local.name_prefix}-sagemaker-execution"
@@ -34,6 +37,56 @@ resource "aws_iam_role_policy_attachment" "sagemaker_s3_full_access" {
 
 resource "aws_iam_role_policy_attachment" "sagemaker_ecr_readonly" {
   role       = aws_iam_role.sagemaker_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# ── SageMaker training execution role ────────────────────────────────────────
+# Assumed by SageMaker during training jobs.  Scoped to training-time needs:
+# S3 read/write for data & checkpoints, ECR image pull, CloudWatch log write.
+
+resource "aws_iam_role" "sagemaker_training_execution" {
+  name               = "${local.name_prefix}-sagemaker-training"
+  assume_role_policy = data.aws_iam_policy_document.sagemaker_assume_role.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "training_sagemaker_full_access" {
+  role       = aws_iam_role.sagemaker_training_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "training_s3_full_access" {
+  role       = aws_iam_role.sagemaker_training_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "training_ecr_readonly" {
+  role       = aws_iam_role.sagemaker_training_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# ── SageMaker inference execution role ───────────────────────────────────────
+# Assumed by SageMaker when loading and serving model containers.  Scoped to
+# inference-time needs: S3 model-artifact read, ECR image pull, CloudWatch logs.
+
+resource "aws_iam_role" "sagemaker_inference_execution" {
+  name               = "${local.name_prefix}-sagemaker-inference"
+  assume_role_policy = data.aws_iam_policy_document.sagemaker_assume_role.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "inference_sagemaker_full_access" {
+  role       = aws_iam_role.sagemaker_inference_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "inference_s3_readonly" {
+  role       = aws_iam_role.sagemaker_inference_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "inference_ecr_readonly" {
+  role       = aws_iam_role.sagemaker_inference_execution.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
@@ -76,7 +129,7 @@ data "aws_iam_policy_document" "data_scientists" {
     resources = ["*"]
   }
 
-  # Training & experiments
+  # Submit training jobs and track experiments
   statement {
     sid    = "TrainingAccess"
     effect = "Allow"
@@ -104,37 +157,47 @@ data "aws_iam_policy_document" "data_scientists" {
     resources = ["*"]
   }
 
-  # Pipelines
+  # Read-only access to pipelines and model registry (visibility, not management)
   statement {
-    sid    = "PipelinesAccess"
+    sid    = "PipelinesAndRegistryReadAccess"
     effect = "Allow"
     actions = [
-      "sagemaker:CreatePipeline",
       "sagemaker:DescribePipeline",
-      "sagemaker:UpdatePipeline",
-      "sagemaker:DeletePipeline",
       "sagemaker:ListPipelines",
-      "sagemaker:StartPipelineExecution",
-      "sagemaker:StopPipelineExecution",
-      "sagemaker:ListPipelineExecutions",
       "sagemaker:DescribePipelineExecution",
+      "sagemaker:ListPipelineExecutions",
+      "sagemaker:ListPipelineParametersForExecution",
+      "sagemaker:DescribeModelPackage",
+      "sagemaker:ListModelPackages",
+      "sagemaker:DescribeModelPackageGroup",
+      "sagemaker:ListModelPackageGroups",
     ]
     resources = ["*"]
   }
 
-  # Data access
+  # Read curated datasets (S3 read-only on curated prefix)
   statement {
-    sid    = "S3DataAccess"
+    sid    = "S3CuratedDataRead"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = var.curated_data_s3_arns
+  }
+
+  # Write training input/output and checkpoints
+  statement {
+    sid    = "S3TrainingAccess"
     effect = "Allow"
     actions = [
       "s3:GetObject",
       "s3:PutObject",
-      "s3:DeleteObject",
       "s3:ListBucket",
       "s3:GetBucketLocation",
-      "s3:CreateBucket",
     ]
-    resources = ["*"]
+    resources = var.training_s3_arns
   }
 
   statement {
@@ -164,11 +227,12 @@ data "aws_iam_policy_document" "data_scientists" {
     resources = ["*"]
   }
 
+  # Data Scientists may only pass the training role to SageMaker
   statement {
-    sid       = "PassRoleToSageMaker"
+    sid       = "PassTrainingRoleToSageMaker"
     effect    = "Allow"
     actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.sagemaker_execution.arn]
+    resources = [aws_iam_role.sagemaker_training_execution.arn]
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
@@ -179,7 +243,7 @@ data "aws_iam_policy_document" "data_scientists" {
 
 resource "aws_iam_policy" "data_scientists" {
   name        = "${local.name_prefix}-data-scientists-policy"
-  description = "Permissions for Data Scientists to use SageMaker Studio, training jobs, and pipelines"
+  description = "Permissions for Data Scientists: Studio/notebook access, curated data read, submit training jobs"
   policy      = data.aws_iam_policy_document.data_scientists.json
   tags        = var.tags
 }
@@ -205,7 +269,8 @@ resource "aws_iam_group" "ml_engineers" {
 }
 
 data "aws_iam_policy_document" "ml_engineers" {
-  # Full SageMaker access for model build/deploy cycles
+  # Full SageMaker access: covers pipeline management, model registry, and
+  # inference deployment end-to-end.
   statement {
     sid       = "SageMakerFullAccess"
     effect    = "Allow"
@@ -237,7 +302,7 @@ data "aws_iam_policy_document" "ml_engineers" {
     resources = ["*"]
   }
 
-  # Autoscaling – engineers own endpoint scaling policies
+  # ML Engineers own endpoint scaling policies
   statement {
     sid       = "AutoScalingAccess"
     effect    = "Allow"
@@ -245,11 +310,15 @@ data "aws_iam_policy_document" "ml_engineers" {
     resources = ["*"]
   }
 
+  # ML Engineers can pass both the training and inference roles to SageMaker
   statement {
-    sid       = "PassRoleToSageMaker"
-    effect    = "Allow"
-    actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.sagemaker_execution.arn]
+    sid    = "PassRolesToSageMaker"
+    effect = "Allow"
+    actions = ["iam:PassRole"]
+    resources = [
+      aws_iam_role.sagemaker_training_execution.arn,
+      aws_iam_role.sagemaker_inference_execution.arn,
+    ]
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
@@ -260,7 +329,7 @@ data "aws_iam_policy_document" "ml_engineers" {
 
 resource "aws_iam_policy" "ml_engineers" {
   name        = "${local.name_prefix}-ml-engineers-policy"
-  description = "Permissions for ML Engineers to manage the full SageMaker model lifecycle"
+  description = "Permissions for ML Engineers: pipeline management, model registry, and inference deployment"
   policy      = data.aws_iam_policy_document.ml_engineers.json
   tags        = var.tags
 }
@@ -385,11 +454,12 @@ data "aws_iam_policy_document" "devops" {
     resources = ["*"]
   }
 
+  # DevOps passes only the inference role (not training) to SageMaker
   statement {
-    sid       = "PassRoleToSageMaker"
+    sid       = "PassInferenceRoleToSageMaker"
     effect    = "Allow"
     actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.sagemaker_execution.arn]
+    resources = [aws_iam_role.sagemaker_inference_execution.arn]
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"

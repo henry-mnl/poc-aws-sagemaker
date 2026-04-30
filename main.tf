@@ -15,9 +15,11 @@ module "iam" {
   environment  = var.environment
   tags         = local.tags
 
-  data_scientist_users = var.data_scientist_users
-  ml_engineer_users    = var.ml_engineer_users
-  devops_users         = var.devops_users
+  data_scientist_users  = var.data_scientist_users
+  ml_engineer_users     = var.ml_engineer_users
+  devops_users          = var.devops_users
+  curated_data_s3_arns  = var.curated_data_s3_arns
+  training_s3_arns      = var.training_s3_arns
 }
 
 # ── SageMaker module ──────────────────────────────────────────────────────────
@@ -34,6 +36,8 @@ module "sagemaker" {
 
   domain_name                 = var.sagemaker_domain_name
   execution_role_arn          = module.iam.sagemaker_execution_role_arn
+  training_role_arn           = module.iam.training_execution_role_arn
+  inference_role_arn          = module.iam.inference_execution_role_arn
   studio_kernel_instance_type = var.studio_kernel_instance_type
 
   # Spot training
@@ -52,4 +56,11 @@ module "sagemaker" {
   autoscaling_target_invocations_per_instance = var.autoscaling_target_invocations_per_instance
   autoscaling_scale_in_cooldown_seconds       = var.autoscaling_scale_in_cooldown_seconds
   autoscaling_scale_out_cooldown_seconds      = var.autoscaling_scale_out_cooldown_seconds
+
+  # GPU endpoint with hardware-level isolation (NVIDIA MIG) + managed_instance_scaling
+  gpu_model_artifact_s3_uri  = var.gpu_model_artifact_s3_uri
+  gpu_container_image_uri    = var.gpu_container_image_uri
+  gpu_endpoint_instance_type = var.gpu_endpoint_instance_type
+  gpu_endpoint_min_capacity  = var.gpu_endpoint_min_capacity
+  gpu_endpoint_max_capacity  = var.gpu_endpoint_max_capacity
 }

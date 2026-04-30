@@ -2,10 +2,12 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
-  name_prefix  = "${var.project_name}-${var.environment}"
-  account_id   = data.aws_caller_identity.current.account_id
-  region       = data.aws_region.current.id
-  deploy_model = var.model_artifact_s3_uri != ""
+  name_prefix       = "${var.project_name}-${var.environment}"
+  account_id        = data.aws_caller_identity.current.account_id
+  region            = data.aws_region.current.id
+  deploy_model      = var.model_artifact_s3_uri != ""
+  deploy_gpu        = var.gpu_model_artifact_s3_uri != ""
+  gpu_image         = var.gpu_container_image_uri != "" ? var.gpu_container_image_uri : var.container_image_uri
 }
 
 # ── S3 bucket ─────────────────────────────────────────────────────────────────
@@ -171,7 +173,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "spot_trainin
   # sample spot-training launcher script to the notebook home directory.
   on_start = base64encode(templatefile("${path.module}/templates/notebook_on_start.sh.tftpl", {
     s3_bucket              = aws_s3_bucket.sagemaker.bucket
-    execution_role_arn     = var.execution_role_arn
+    training_role_arn      = var.training_role_arn
     training_instance_type = var.training_instance_type
     max_run_seconds        = var.training_max_run_seconds
     max_wait_seconds       = var.training_max_wait_seconds
@@ -185,7 +187,7 @@ resource "aws_sagemaker_model" "this" {
   count = local.deploy_model ? 1 : 0
 
   name               = "${local.name_prefix}-model"
-  execution_role_arn = var.execution_role_arn
+  execution_role_arn = var.inference_role_arn
 
   primary_container {
     image          = var.container_image_uri
@@ -275,7 +277,7 @@ resource "aws_sagemaker_training_job" "spot" {
   count = local.deploy_model ? 0 : 1
 
   training_job_name = "${local.name_prefix}-spot-training-job"
-  role_arn          = var.execution_role_arn
+  role_arn          = var.training_role_arn
 
   algorithm_specification {
     training_image      = var.container_image_uri
@@ -315,3 +317,69 @@ resource "aws_sagemaker_training_job" "spot" {
 
   tags = var.tags
 }
+
+# ── GPU endpoint with hardware-level isolation (NVIDIA MIG) ──────────────────
+# Uses managed_instance_scaling (SageMaker-native) instead of Application Auto
+# Scaling so the endpoint can participate in SageMaker's Inference Component
+# model-placement algorithm on MIG-capable GPU instances (ml.p4de.24xlarge).
+# The NVIDIA_MIG_CONFIG_DEVICES and CUDA_* environment variables instruct the
+# NVIDIA Container Toolkit to expose individual MIG partitions as isolated
+# compute contexts to each model container.
+
+resource "aws_sagemaker_model" "gpu" {
+  count = local.deploy_gpu ? 1 : 0
+
+  name               = "${local.name_prefix}-gpu-model"
+  execution_role_arn = var.inference_role_arn
+
+  primary_container {
+    image          = local.gpu_image
+    model_data_url = var.gpu_model_artifact_s3_uri
+    mode           = "SingleModel"
+
+    environment = {
+      SAGEMAKER_PROGRAM          = "inference.py"
+      SAGEMAKER_SUBMIT_DIRECTORY = "/opt/ml/code"
+      # NVIDIA MIG – expose all available MIG device partitions to the container
+      NVIDIA_MIG_CONFIG_DEVICES  = "all"
+      # NVIDIA MPS – shared GPU memory process service directories
+      CUDA_MPS_PIPE_DIRECTORY    = "/tmp/nvidia-mps"
+      CUDA_MPS_LOG_DIRECTORY     = "/tmp/nvidia-log"
+    }
+  }
+
+  tags = var.tags
+}
+
+resource "aws_sagemaker_endpoint_configuration" "gpu" {
+  count = local.deploy_gpu ? 1 : 0
+
+  name = "${local.name_prefix}-gpu-endpoint-config"
+
+  production_variants {
+    variant_name = "gpu-primary"
+    model_name   = aws_sagemaker_model.gpu[0].name
+    # Start with a single instance; managed_instance_scaling will add more as
+    # the workload grows – no separate aws_appautoscaling_* resources required.
+    initial_instance_count = 1
+    instance_type          = var.gpu_endpoint_instance_type
+
+    managed_instance_scaling {
+      status             = "ENABLED"
+      min_instance_count = var.gpu_endpoint_min_capacity
+      max_instance_count = var.gpu_endpoint_max_capacity
+    }
+  }
+
+  tags = var.tags
+}
+
+resource "aws_sagemaker_endpoint" "gpu" {
+  count = local.deploy_gpu ? 1 : 0
+
+  name                 = "${local.name_prefix}-gpu-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.gpu[0].name
+
+  tags = var.tags
+}
+

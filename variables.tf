@@ -123,6 +123,39 @@ variable "autoscaling_scale_out_cooldown_seconds" {
   default     = 60
 }
 
+# ── GPU endpoint (NVIDIA MIG / hardware-level isolation) ─────────────────────
+
+variable "gpu_model_artifact_s3_uri" {
+  description = "S3 URI of the trained model artifact for the GPU endpoint (e.g. s3://bucket/prefix/model.tar.gz). Leave empty to skip GPU endpoint creation."
+  type        = string
+  default     = ""
+}
+
+variable "gpu_container_image_uri" {
+  description = "Container image URI for the GPU endpoint. Leave empty to reuse container_image_uri."
+  type        = string
+  default     = ""
+}
+
+variable "gpu_endpoint_instance_type" {
+  description = "EC2 instance type for the GPU endpoint. ml.p4de.24xlarge provides 8× NVIDIA A100 GPUs with MIG support for hardware-level isolation."
+  type        = string
+  default     = "ml.p4de.24xlarge"
+}
+
+variable "gpu_endpoint_min_capacity" {
+  description = "Minimum instance count for the GPU endpoint (managed_instance_scaling)"
+  type        = number
+  default     = 1
+}
+
+variable "gpu_endpoint_max_capacity" {
+  description = "Maximum instance count for the GPU endpoint (managed_instance_scaling)"
+  type        = number
+  default     = 2
+}
+
+
 # ── IAM group membership (optional) ──────────────────────────────────────────
 
 variable "data_scientist_users" {
@@ -141,4 +174,16 @@ variable "devops_users" {
   description = "IAM user names to add to the DevOps group"
   type        = list(string)
   default     = []
+}
+
+variable "curated_data_s3_arns" {
+  description = "List of S3 ARNs (bucket or prefix) that Data Scientists are allowed to read as curated datasets. Defaults to all S3 resources; tighten in production (e.g. [\"arn:aws:s3:::my-curated-bucket\", \"arn:aws:s3:::my-curated-bucket/*\"])."
+  type        = list(string)
+  default     = ["*"]
+}
+
+variable "training_s3_arns" {
+  description = "List of S3 ARNs (bucket or prefix) that Data Scientists are allowed to write training artifacts to. Defaults to all S3 resources; tighten in production (e.g. [\"arn:aws:s3:::my-sagemaker-bucket/training/*\"])."
+  type        = list(string)
+  default     = ["*"]
 }

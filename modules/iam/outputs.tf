@@ -1,11 +1,31 @@
 output "sagemaker_execution_role_arn" {
-  description = "ARN of the SageMaker execution IAM role"
+  description = "ARN of the SageMaker Studio execution IAM role (used by domain and user profiles)"
   value       = aws_iam_role.sagemaker_execution.arn
 }
 
 output "sagemaker_execution_role_name" {
-  description = "Name of the SageMaker execution IAM role"
+  description = "Name of the SageMaker Studio execution IAM role"
   value       = aws_iam_role.sagemaker_execution.name
+}
+
+output "training_execution_role_arn" {
+  description = "ARN of the dedicated SageMaker training execution IAM role"
+  value       = aws_iam_role.sagemaker_training_execution.arn
+}
+
+output "training_execution_role_name" {
+  description = "Name of the dedicated SageMaker training execution IAM role"
+  value       = aws_iam_role.sagemaker_training_execution.name
+}
+
+output "inference_execution_role_arn" {
+  description = "ARN of the dedicated SageMaker inference execution IAM role"
+  value       = aws_iam_role.sagemaker_inference_execution.arn
+}
+
+output "inference_execution_role_name" {
+  description = "Name of the dedicated SageMaker inference execution IAM role"
+  value       = aws_iam_role.sagemaker_inference_execution.name
 }
 
 output "data_scientists_group_name" {

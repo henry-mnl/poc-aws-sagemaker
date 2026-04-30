@@ -43,6 +43,16 @@ output "endpoint_name" {
   value       = local.deploy_model ? aws_sagemaker_endpoint.this[0].name : null
 }
 
+output "gpu_endpoint_name" {
+  description = "Name of the GPU inference endpoint with managed_instance_scaling (null if gpu_model_artifact_s3_uri is not set)"
+  value       = local.deploy_gpu ? aws_sagemaker_endpoint.gpu[0].name : null
+}
+
+output "gpu_endpoint_config_name" {
+  description = "Name of the GPU endpoint configuration (null if gpu_model_artifact_s3_uri is not set)"
+  value       = local.deploy_gpu ? aws_sagemaker_endpoint_configuration.gpu[0].name : null
+}
+
 output "user_profiles" {
   description = "Map of user profile names created in the SageMaker domain"
   value = {

@@ -31,3 +31,15 @@ variable "devops_users" {
   type        = list(string)
   default     = []
 }
+
+variable "curated_data_s3_arns" {
+  description = "List of S3 ARNs (bucket or prefix) that Data Scientists are allowed to read as curated datasets. Defaults to all S3 resources; tighten in production."
+  type        = list(string)
+  default     = ["*"]
+}
+
+variable "training_s3_arns" {
+  description = "List of S3 ARNs (bucket or prefix) that Data Scientists are allowed to write training artifacts to (input uploads, output, checkpoints). Defaults to all S3 resources; tighten in production."
+  type        = list(string)
+  default     = ["*"]
+}

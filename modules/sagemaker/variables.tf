@@ -34,7 +34,17 @@ variable "domain_name" {
 }
 
 variable "execution_role_arn" {
-  description = "ARN of the IAM role assumed by SageMaker for all operations"
+  description = "ARN of the IAM role assumed by SageMaker Studio (domain and user profiles)"
+  type        = string
+}
+
+variable "training_role_arn" {
+  description = "ARN of the IAM role assumed by SageMaker during training jobs"
+  type        = string
+}
+
+variable "inference_role_arn" {
+  description = "ARN of the IAM role assumed by SageMaker when loading and serving model containers"
   type        = string
 }
 
@@ -123,4 +133,36 @@ variable "autoscaling_scale_out_cooldown_seconds" {
   description = "Cooldown period in seconds after a scale-out activity"
   type        = number
   default     = 60
+}
+
+# ── GPU endpoint with hardware-level isolation (NVIDIA MIG) ──────────────────
+
+variable "gpu_model_artifact_s3_uri" {
+  description = "S3 URI of the model artifact for the GPU endpoint. When empty, GPU endpoint resources are skipped."
+  type        = string
+  default     = ""
+}
+
+variable "gpu_container_image_uri" {
+  description = "Container image URI for the GPU endpoint. When empty, falls back to container_image_uri."
+  type        = string
+  default     = ""
+}
+
+variable "gpu_endpoint_instance_type" {
+  description = "EC2 instance type for the GPU inference endpoint. ml.p4de.24xlarge provides NVIDIA A100 GPUs with MIG support."
+  type        = string
+  default     = "ml.p4de.24xlarge"
+}
+
+variable "gpu_endpoint_min_capacity" {
+  description = "Minimum instance count for the GPU endpoint (managed_instance_scaling)"
+  type        = number
+  default     = 1
+}
+
+variable "gpu_endpoint_max_capacity" {
+  description = "Maximum instance count for the GPU endpoint (managed_instance_scaling)"
+  type        = number
+  default     = 2
 }

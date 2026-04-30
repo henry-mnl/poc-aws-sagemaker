@@ -28,7 +28,7 @@ from a Jupyter terminal or notebook cell:
 
 Environment details injected by Terraform:
   - S3 bucket  : ${s3_bucket}
-  - Role ARN   : ${execution_role_arn}
+  - Role ARN   : ${training_role_arn}
   - Instance   : ${training_instance_type}
   - Max run    : ${max_run_seconds}s
   - Max wait   : ${max_wait_seconds}s
@@ -40,7 +40,7 @@ import sagemaker
 from sagemaker.estimator import Estimator
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-ROLE_ARN              = "${execution_role_arn}"
+ROLE_ARN              = "${training_role_arn}"
 S3_BUCKET             = "${s3_bucket}"
 TRAINING_INPUT_S3     = f"s3://{S3_BUCKET}/training/input/"
 TRAINING_OUTPUT_S3    = f"s3://{S3_BUCKET}/training/output/"

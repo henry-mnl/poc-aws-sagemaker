@@ -4,8 +4,10 @@ Terraform code for an AWS SageMaker platform with:
 
 - **SageMaker Studio Domain** (VPC-only mode) and **user-profile workspaces** for three personas
 - **Managed Spot Training** job with configurable instance type, max-run / max-wait times, and S3 checkpointing
-- **On-demand inference endpoint** with a target-tracking **auto-scaling policy** (`SageMakerVariantInvocationsPerInstance`)
-- **IAM groups & policies** for Data Scientists, ML Engineers, and DevOps
+- **On-demand inference endpoint** with a target-tracking **Application Auto Scaling** policy (`SageMakerVariantInvocationsPerInstance`)
+- **GPU inference endpoint** with NVIDIA MIG hardware-level isolation on `ml.p4de.24xlarge` using **`managed_instance_scaling`** (SageMaker-native autoscaling)
+- **Three dedicated IAM execution roles** – Studio, training, and inference – following least-privilege separation
+- **IAM groups & policies** for Data Scientists, ML Engineers, and DevOps with role-appropriate permissions
 
 ---
 
@@ -35,9 +37,11 @@ Terraform code for an AWS SageMaker platform with:
 └──────────────────────────────────────────────────────────────────────┘
 
 IAM
-  • SageMaker execution role (assumed by sagemaker.amazonaws.com)
-  • Group: data-scientists   – Studio / training / pipeline access
-  • Group: ml-engineers      – Full SageMaker + ECR + autoscaling
+  • sagemaker-execution role  – Studio domain & user-profile apps
+  • sagemaker-training role   – training jobs (separate least-privilege role)
+  • sagemaker-inference role  – model containers (separate least-privilege role)
+  • Group: data-scientists   – Studio / training / curated-data read / pipelines (read-only)
+  • Group: ml-engineers      – Full SageMaker + ECR + autoscaling (pipelines, model registry, deployment)
   • Group: devops            – Endpoint management + CF + autoscaling
 ```
 
@@ -53,11 +57,11 @@ IAM
 ├── versions.tf
 └── modules/
     ├── iam/
-    │   ├── main.tf   # execution role, three IAM groups and policies
+    │   ├── main.tf   # three execution roles (studio/training/inference), three IAM groups and policies
     │   ├── variables.tf
     │   └── outputs.tf
     └── sagemaker/
-        ├── main.tf   # domain, user profiles, S3, training job, endpoint, autoscaling
+        ├── main.tf   # domain, user profiles, S3, training job, on-demand endpoint + AppAutoScaling, GPU endpoint + managed_instance_scaling
         ├── variables.tf
         ├── outputs.tf
         └── templates/
@@ -134,9 +138,9 @@ aws sagemaker create-presigned-domain-url \
 
 | Group | Key permissions |
 |-------|----------------|
-| `data-scientists` | Studio, notebook instances, training jobs, hyperparameter tuning, pipelines, experiments, S3 read/write |
-| `ml-engineers` | Full SageMaker + S3 + ECR + CloudWatch + ApplicationAutoScaling |
-| `devops` | Endpoint lifecycle, autoscaling management, CloudWatch alarms, CloudFormation, IAM read |
+| `data-scientists` | Studio & notebook instances, training jobs, hyperparameter tuning, experiments; curated-data S3 read (`curated_data_s3_arns`); pipelines & model registry **read-only** |
+| `ml-engineers` | Full SageMaker (pipelines, model registry, inference deployment) + S3 + ECR + CloudWatch + ApplicationAutoScaling; `iam:PassRole` for training & inference roles |
+| `devops` | Endpoint lifecycle, autoscaling management, CloudWatch alarms, CloudFormation, IAM read; `iam:PassRole` for inference role only |
 
 ---
 
@@ -152,8 +156,11 @@ See [`variables.tf`](variables.tf) for the full list of input variables and thei
 | `sagemaker_domain_url` | SageMaker Studio domain URL |
 | `sagemaker_s3_bucket` | S3 bucket name for training data and artifacts |
 | `sagemaker_training_job_name` | Spot training job name (when `model_artifact_s3_uri` is empty) |
-| `sagemaker_endpoint_name` | Inference endpoint name (when `model_artifact_s3_uri` is set) |
-| `sagemaker_execution_role_arn` | ARN of the SageMaker execution role |
+| `sagemaker_endpoint_name` | On-demand inference endpoint name (when `model_artifact_s3_uri` is set) |
+| `sagemaker_gpu_endpoint_name` | GPU inference endpoint name (when `gpu_model_artifact_s3_uri` is set) |
+| `sagemaker_execution_role_arn` | ARN of the SageMaker Studio execution role |
+| `training_execution_role_arn` | ARN of the dedicated training execution role |
+| `inference_execution_role_arn` | ARN of the dedicated inference execution role |
 | `data_scientists_group_name` | IAM group name – Data Scientists |
 | `ml_engineers_group_name` | IAM group name – ML Engineers |
 | `devops_group_name` | IAM group name – DevOps |
