@@ -113,3 +113,14 @@ output "sts_endpoint_id" {
   description = "ID of the STS Interface endpoint"
   value       = module.vpc_endpoints.sts_endpoint_id
 }
+
+output "bedrock_endpoint_id" {
+  description = "ID of the Bedrock Interface endpoint (control plane)"
+  value       = module.vpc_endpoints.bedrock_endpoint_id
+}
+
+output "bedrock_runtime_endpoint_id" {
+  description = "ID of the Bedrock Runtime Interface endpoint (data plane – InvokeModel, Converse)"
+  value       = module.vpc_endpoints.bedrock_runtime_endpoint_id
+}
+

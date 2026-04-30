@@ -67,6 +67,8 @@ IAM
 | `logs` | Interface | Training and kernel log delivery to CloudWatch Logs |
 | `monitoring` | Interface | Custom and built-in metric publishing to CloudWatch |
 | `sts` | Interface | `AssumeRole` for credential refresh inside the VPC |
+| `bedrock` | Interface | Bedrock control-plane calls (list/describe models, manage guardrails) |
+| `bedrock-runtime` | Interface | Bedrock data-plane calls (`InvokeModel`, `Converse`, streaming variants) |
 
 A dedicated **VPC endpoint security group** (`${name}-vpc-endpoints-sg`) is attached to every Interface endpoint ENI. It allows **HTTPS inbound only from the SageMaker SG** so no unrelated VPC traffic can reach the endpoint ENIs.
 
@@ -203,3 +205,5 @@ See [`variables.tf`](variables.tf) for the full list of input variables and thei
 | `logs_endpoint_id` | CloudWatch Logs Interface endpoint ID |
 | `monitoring_endpoint_id` | CloudWatch Monitoring Interface endpoint ID |
 | `sts_endpoint_id` | STS Interface endpoint ID |
+| `bedrock_endpoint_id` | Bedrock control-plane Interface endpoint ID |
+| `bedrock_runtime_endpoint_id` | Bedrock Runtime (data-plane) Interface endpoint ID |

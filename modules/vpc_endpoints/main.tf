@@ -164,3 +164,34 @@ resource "aws_vpc_endpoint" "sts" {
 
   tags = merge(var.tags, { Name = "${local.name_prefix}-sts-endpoint" })
 }
+
+# ── Bedrock Interface endpoint ────────────────────────────────────────────────
+# Allows Studio notebooks and training code to call Amazon Bedrock foundation
+# model APIs (InvokeModel, Converse, etc.) without leaving the VPC.
+
+resource "aws_vpc_endpoint" "bedrock" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${local.region}.bedrock"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, { Name = "${local.name_prefix}-bedrock-endpoint" })
+}
+
+# ── Bedrock Runtime Interface endpoint ───────────────────────────────────────
+# The data-plane endpoint used by boto3 bedrock-runtime client
+# (InvokeModel, InvokeModelWithResponseStream, Converse, ConverseStream).
+# Both bedrock and bedrock-runtime endpoints are required for full SDK support.
+
+resource "aws_vpc_endpoint" "bedrock_runtime" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${local.region}.bedrock-runtime"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(var.tags, { Name = "${local.name_prefix}-bedrock-runtime-endpoint" })
+}

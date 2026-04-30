@@ -47,3 +47,13 @@ output "sts_endpoint_id" {
   description = "ID of the STS Interface endpoint"
   value       = aws_vpc_endpoint.sts.id
 }
+
+output "bedrock_endpoint_id" {
+  description = "ID of the Bedrock Interface endpoint (control plane)"
+  value       = aws_vpc_endpoint.bedrock.id
+}
+
+output "bedrock_runtime_endpoint_id" {
+  description = "ID of the Bedrock Runtime Interface endpoint (data plane – InvokeModel, Converse)"
+  value       = aws_vpc_endpoint.bedrock_runtime.id
+}
