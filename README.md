@@ -2,7 +2,8 @@
 
 Terraform code for an AWS SageMaker platform with:
 
-- **SageMaker Studio Domain** (VPC-only mode) and **user-profile workspaces** for three personas
+- **SageMaker Studio Domain** (VPC-only mode, private subnets) and **user-profile workspaces** for three personas
+- **VPC Endpoints** – S3 Gateway + eight Interface endpoints so all SageMaker workloads stay fully private (no NAT gateway or internet route required)
 - **Managed Spot Training** job with configurable instance type, max-run / max-wait times, and S3 checkpointing
 - **On-demand inference endpoint** with a target-tracking **Application Auto Scaling** policy (`SageMakerVariantInvocationsPerInstance`)
 - **GPU inference endpoint** with NVIDIA MIG hardware-level isolation on `ml.p4de.24xlarge` using **`managed_instance_scaling`** (SageMaker-native autoscaling)
@@ -14,27 +15,33 @@ Terraform code for an AWS SageMaker platform with:
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  VPC                                                                  │
-│                                                                       │
-│  ┌──────────────────────────────┐   ┌───────────────────────────┐   │
-│  │  SageMaker Studio Domain     │   │  SageMaker Endpoint        │   │
-│  │  (auth_mode = IAM, VPC-only) │   │  (on-demand instances)     │   │
-│  │                              │   │  ↕ AppAutoScaling          │   │
-│  │  User Profiles               │   │    (target-tracking)       │   │
-│  │  • data-scientist            │   └───────────────────────────┘   │
-│  │  • ml-engineer               │                                    │
-│  │  • devops                    │   ┌───────────────────────────┐   │
-│  └──────────────────────────────┘   │  Spot Training Job         │   │
-│                                     │  (Managed Spot Training)   │   │
-│  ┌──────────────────────────────┐   │  • S3 checkpointing        │   │
-│  │  S3 Bucket (encrypted)       │   └───────────────────────────┘   │
-│  │  training/input/             │                                    │
-│  │  training/output/            │                                    │
-│  │  training/checkpoints/       │                                    │
-│  │  models/                     │                                    │
-│  └──────────────────────────────┘                                    │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  VPC (private subnets only – no internet route)                                │
+│                                                                                │
+│  ┌──────────────────────────────┐   ┌────────────────────────────────────┐   │
+│  │  SageMaker Studio Domain     │   │  SageMaker Endpoints               │   │
+│  │  (auth_mode = IAM, VPC-only) │   │  • On-demand + AppAutoScaling      │   │
+│  │                              │   │  • GPU (MIG) + managed_scaling     │   │
+│  │  User Profiles               │   └────────────────────────────────────┘   │
+│  │  • data-scientist            │                                             │
+│  │  • ml-engineer               │   ┌────────────────────────────────────┐   │
+│  │  • devops                    │   │  Spot Training Job                 │   │
+│  └──────────────────────────────┘   │  (Managed Spot Training + S3 ckpt) │   │
+│                                     └────────────────────────────────────┘   │
+│  ┌──────────────────────────────┐                                             │
+│  │  S3 Bucket (encrypted)       │   ┌────────────────────────────────────┐   │
+│  │  training/input/             │   │  VPC Endpoints (private AWS APIs)  │   │
+│  │  training/output/            │   │  • S3 Gateway endpoint             │   │
+│  │  training/checkpoints/       │   │  • sagemaker.api   (Interface)     │   │
+│  │  models/                     │   │  • sagemaker.runtime (Interface)   │   │
+│  └──────────────────────────────┘   │  • studio          (Interface)     │   │
+│                                     │  • ecr.api         (Interface)     │   │
+│                                     │  • ecr.dkr         (Interface)     │   │
+│                                     │  • logs            (Interface)     │   │
+│                                     │  • monitoring      (Interface)     │   │
+│                                     │  • sts             (Interface)     │   │
+│                                     └────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────┘
 
 IAM
   • sagemaker-execution role  – Studio domain & user-profile apps
@@ -47,11 +54,29 @@ IAM
 
 ---
 
+## VPC endpoint design
+
+| Endpoint | Type | Purpose |
+|----------|------|---------|
+| `s3` | **Gateway** | Training nodes and Studio read/write S3 buckets via AWS backbone (free, no SG needed) |
+| `sagemaker.api` | Interface | API calls from SDK / boto3 (`CreateTrainingJob`, `DescribeEndpoint`, etc.) |
+| `sagemaker.runtime` | Interface | `InvokeEndpoint` calls from inside the VPC |
+| `studio` | Interface | VPC-only Studio access (browser redirected to private endpoint) |
+| `ecr.api` | Interface | Pull image manifests |
+| `ecr.dkr` | Interface | Pull image layers (works with the S3 gateway for the layer bytes) |
+| `logs` | Interface | Training and kernel log delivery to CloudWatch Logs |
+| `monitoring` | Interface | Custom and built-in metric publishing to CloudWatch |
+| `sts` | Interface | `AssumeRole` for credential refresh inside the VPC |
+
+A dedicated **VPC endpoint security group** (`${name}-vpc-endpoints-sg`) is attached to every Interface endpoint ENI. It allows **HTTPS inbound only from the SageMaker SG** so no unrelated VPC traffic can reach the endpoint ENIs.
+
+---
+
 ## Module structure
 
 ```
 .
-├── main.tf           # root module – wires iam + sagemaker modules together
+├── main.tf           # root module – wires iam + sagemaker + vpc_endpoints modules
 ├── variables.tf
 ├── outputs.tf
 ├── versions.tf
@@ -60,12 +85,16 @@ IAM
     │   ├── main.tf   # three execution roles (studio/training/inference), three IAM groups and policies
     │   ├── variables.tf
     │   └── outputs.tf
-    └── sagemaker/
-        ├── main.tf   # domain, user profiles, S3, training job, on-demand endpoint + AppAutoScaling, GPU endpoint + managed_instance_scaling
+    ├── sagemaker/
+    │   ├── main.tf   # domain, user profiles, S3, training job, on-demand endpoint + AppAutoScaling, GPU endpoint + managed_instance_scaling
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   └── templates/
+    │       └── notebook_on_start.sh.tftpl  # lifecycle script with spot-training example
+    └── vpc_endpoints/
+        ├── main.tf   # S3 gateway endpoint, 8× Interface endpoints, endpoint security group
         ├── variables.tf
-        ├── outputs.tf
-        └── templates/
-            └── notebook_on_start.sh.tftpl  # lifecycle script with spot-training example
+        └── outputs.tf
 ```
 
 ---
@@ -164,3 +193,13 @@ See [`variables.tf`](variables.tf) for the full list of input variables and thei
 | `data_scientists_group_name` | IAM group name – Data Scientists |
 | `ml_engineers_group_name` | IAM group name – ML Engineers |
 | `devops_group_name` | IAM group name – DevOps |
+| `vpc_endpoint_sg_id` | Security group ID for VPC Interface endpoint ENIs |
+| `s3_vpc_endpoint_id` | S3 Gateway endpoint ID |
+| `sagemaker_api_endpoint_id` | SageMaker API Interface endpoint ID |
+| `sagemaker_runtime_endpoint_id` | SageMaker Runtime Interface endpoint ID |
+| `sagemaker_studio_endpoint_id` | SageMaker Studio Interface endpoint ID |
+| `ecr_api_endpoint_id` | ECR API Interface endpoint ID |
+| `ecr_dkr_endpoint_id` | ECR DKR Interface endpoint ID |
+| `logs_endpoint_id` | CloudWatch Logs Interface endpoint ID |
+| `monitoring_endpoint_id` | CloudWatch Monitoring Interface endpoint ID |
+| `sts_endpoint_id` | STS Interface endpoint ID |

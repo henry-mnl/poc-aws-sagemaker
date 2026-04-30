@@ -64,3 +64,20 @@ module "sagemaker" {
   gpu_endpoint_min_capacity  = var.gpu_endpoint_min_capacity
   gpu_endpoint_max_capacity  = var.gpu_endpoint_max_capacity
 }
+
+# ── VPC Endpoints module ──────────────────────────────────────────────────────
+# Creates an S3 Gateway endpoint and Interface endpoints for all AWS services
+# that SageMaker workloads in private subnets need to reach, eliminating the
+# need for a NAT gateway or internet route.
+
+module "vpc_endpoints" {
+  source = "./modules/vpc_endpoints"
+
+  project_name = var.project_name
+  environment  = var.environment
+  tags         = local.tags
+
+  vpc_id          = var.vpc_id
+  subnet_ids      = var.subnet_ids
+  sagemaker_sg_id = module.sagemaker.security_group_id
+}
