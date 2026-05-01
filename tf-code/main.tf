@@ -20,14 +20,14 @@ provider "aws" {
 }
 
 locals {
-  region      = "ap-southeast-1"
-  name_prefix = "poc-sagemaker"
+  region      = data.aws_region.current.name
+  name_prefix = "poc-ml-sagemaker"
 }
 
 module "sagemaker" {
   source = "./sagemaker"
 
-  domain_name        = "poc-sagemaker-domain"
+  domain_name        = "${local.name_prefix}-domain"
   execution_role_arn = aws_iam_role.sagemaker-execution-role.arn
   training_role_arn  = aws_iam_role.sagemaker-training-role.arn
   inference_role_arn = aws_iam_role.sagemaker-inference-role.arn
