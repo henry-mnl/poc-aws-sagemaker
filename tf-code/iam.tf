@@ -275,6 +275,11 @@ resource "aws_iam_policy" "ml-engineers-policy" {
   })
 }
 
+resource "aws_iam_group_policy_attachment" "ml-engineers-policy-attachment" {
+  group      = aws_iam_group.ml-engineers-group.name
+  policy_arn = aws_iam_policy.ml-engineers-policy.arn
+}
+
 ####################################################################################################
 # Sagemaker Execution Role
 ####################################################################################################
