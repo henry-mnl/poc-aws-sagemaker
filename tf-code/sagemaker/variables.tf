@@ -37,21 +37,6 @@ variable "domain_name" {
   type        = string
 }
 
-variable "execution_role_arn" {
-  description = "ARN of the IAM role assumed by SageMaker for all operations"
-  type        = string
-}
-
-variable "training_role_arn" {
-  description = "ARN of the IAM role assumed by SageMaker for training jobs"
-  type        = string
-}
-
-variable "inference_role_arn" {
-  description = "ARN of the IAM role assumed by SageMaker for inference jobs"
-  type        = string
-}
-
 variable "studio_kernel_instance_type" {
   description = "Default instance type for SageMaker Studio kernel gateway apps"
   type        = string

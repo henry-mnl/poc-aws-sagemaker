@@ -9,7 +9,7 @@ resource "aws_sagemaker_domain" "sagemaker-domain" {
   app_network_access_type = "VpcOnly"
 
   default_user_settings {
-    execution_role    = var.execution_role_arn
+    execution_role    = aws_iam_role.sagemaker-execution-role.arn
     security_groups   = [aws_security_group.sagemaker-domain-sg.id]
     studio_web_portal = "Enabled"
 
@@ -25,7 +25,7 @@ resource "aws_sagemaker_user_profile" "data_scientist" {
   user_profile_name = "${local.name_prefix}-data-scientist"
 
   user_settings {
-    execution_role  = var.execution_role_arn
+    execution_role  = aws_iam_role.sagemaker-training-role.arn
     security_groups = [aws_security_group.sagemaker-domain-sg.id]
   }
 }
@@ -35,7 +35,7 @@ resource "aws_sagemaker_user_profile" "ml_engineer" {
   user_profile_name = "${local.name_prefix}-ml-engineer"
 
   user_settings {
-    execution_role  = var.execution_role_arn
+    execution_role  = aws_iam_role.sagemaker-training-role.arn
     security_groups = [aws_security_group.sagemaker-domain-sg.id]
   }
 }
@@ -45,7 +45,7 @@ resource "aws_sagemaker_user_profile" "devops" {
   user_profile_name = "${local.name_prefix}-devops"
 
   user_settings {
-    execution_role  = var.execution_role_arn
+    execution_role  = aws_iam_role.sagemaker-execution-role.arn
     security_groups = [aws_security_group.sagemaker-domain-sg.id]
   }
 }
@@ -62,7 +62,7 @@ data "aws_sagemaker_prebuilt_ecr_image" "sagemaker-scikit-learn" {
 # create a sagemaker model based on provided model artifact. Example use prebuilt Sagemaker AI docker image. Replace with appropriate ECR repo uri for other model
 resource "aws_sagemaker_model" "model-1" {
   name               = "${local.name_prefix}-model"
-  execution_role_arn = var.training_role_arn
+  execution_role_arn = aws_iam_role.sagemaker-training-role.arn
 
   primary_container {
     image = data.aws_sagemaker_prebuilt_ecr_image.sagemaker-scikit-learn.registry_path
@@ -83,7 +83,7 @@ resource "aws_sagemaker_model" "model-1" {
 
 resource "aws_sagemaker_model" "model-mig" {
   name               = "${local.name_prefix}-model-mig"
-  execution_role_arn = var.training_role_arn
+  execution_role_arn = aws_iam_role.sagemaker-training-role.arn
 
   primary_container {
     image = data.aws_sagemaker_prebuilt_ecr_image.sagemaker-scikit-learn.registry_path
@@ -120,7 +120,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "spot_trainin
   # sample spot-training launcher script to the notebook home directory.
   on_start = base64encode(templatefile("${path.module}/templates/notebook_on_start.sh.tftpl", {
     s3_bucket              = aws_s3_bucket.sagemaker-bucket.id
-    execution_role_arn     = var.training_role_arn
+    execution_role_arn     = aws_iam_role.sagemaker-training-role.arn
     training_instance_type = var.training_instance_type
     max_run_seconds        = var.training_max_run_seconds
     max_wait_seconds       = var.training_max_wait_seconds
@@ -134,7 +134,7 @@ resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "spot_trainin
 # Create Sagemaker endpoint configuration using on-demand instances. For this POC, we'll use the model created above.
 resource "aws_sagemaker_endpoint_configuration" "sagemaker-endpoint-config-primary" {
   name               = "${local.name_prefix}-endpoint-config-primary"
-  execution_role_arn = var.inference_role_arn
+  execution_role_arn = aws_iam_role.sagemaker-inference-role.arn
 
   production_variants {
     variant_name           = "primary-variant"
@@ -146,7 +146,7 @@ resource "aws_sagemaker_endpoint_configuration" "sagemaker-endpoint-config-prima
 
 resource "aws_sagemaker_endpoint_configuration" "sagemaker-endpoint-config-mig" {
   name               = "${local.name_prefix}-endpoint-config-mig"
-  execution_role_arn = var.inference_role_arn
+  execution_role_arn = aws_iam_role.sagemaker-inference-role.arn
 
   production_variants {
     variant_name           = "mig-variant" # create a mig-capable production variants
