@@ -81,6 +81,32 @@ resource "aws_sagemaker_model" "model-1" {
   }
 }
 
+resource "aws_sagemaker_model" "model-mig" {
+  name               = "${local.name_prefix}-model-mig"
+  execution_role_arn = var.training_role_arn
+
+  primary_container {
+    image = data.aws_sagemaker_prebuilt_ecr_image.sagemaker-scikit-learn.registry_path
+    mode  = "SingleModel" # change to MultiModel to load multiple models in the same container and load it into single instance.
+    # model_data_url = "location of S3 model artifact, e.g. s3://${aws_s3_bucket.sagemaker-bucket.bucket}/model/model.tar.gz"
+
+    environment = {
+      SAGEMAKER_PROGRAM          = "inference.py"
+      SAGEMAKER_SUBMIT_DIRECTORY = "/opt/ml/code"
+      # NVIDIA MIG – expose all available MIG device partitions to the container
+      NVIDIA_MIG_CONFIG_DEVICES = "all"
+      # NVIDIA MPS – shared GPU memory process service directories
+      CUDA_MPS_PIPE_DIRECTORY = "/tmp/nvidia-mps"
+      CUDA_MPS_LOG_DIRECTORY  = "/tmp/nvidia-log"
+    }
+
+    # image_config {
+    #   repository_access_mode = "Vpc"
+    # } # uncomment when using a custom ECR image in a private repository and need to pull image through VPC endpoint
+  }
+
+}
+
 ####################################################################################################
 # Sagemaker Notebook Instance Lifecycle Configuration
 ####################################################################################################
@@ -123,8 +149,8 @@ resource "aws_sagemaker_endpoint_configuration" "sagemaker-endpoint-config-mig" 
   execution_role_arn = var.inference_role_arn
 
   production_variants {
-    variant_name           = "mig-variant"                       # create a mig-capable production variants
-    model_name             = aws_sagemaker_model.model-1.name    # using the same model for both variants, but can be different models based on requirement
+    variant_name           = "mig-variant" # create a mig-capable production variants
+    model_name             = aws_sagemaker_model.model-mig.name
     initial_instance_count = var.endpoint_initial_instance_count # default to 1
     instance_type          = "ml.p4de.24xlarge"                  # 8× A100, MIG-capable
 
