@@ -13,7 +13,19 @@ resource "aws_sagemaker_domain" "sagemaker-domain" {
     security_groups   = [aws_security_group.sagemaker-domain-sg.id]
     studio_web_portal = "Enabled"
 
-    #TODO: Add applications settings based on requirement such as JupyterServer, RStudio, TensorBoard, etc.
+    #TODO: Add applications settings based on requirement such as JupyterServer, RStudio, TensorBoard, etc. Below is a sample settings.
+    jupyter_lab_app_settings {
+      app_lifecycle_management {
+        idle_settings {
+          lifecycle_management        = "ENABLED"
+          idle_timeout_in_minutes     = 3600
+          max_idle_timeout_in_minutes = 7200
+        }
+      }
+      code_repository {
+        repository_url = "<insert default repo url>"
+      }
+    }
   }
 }
 
