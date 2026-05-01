@@ -27,12 +27,9 @@ locals {
 module "sagemaker" {
   source = "./sagemaker"
 
-  domain_name        = "${local.name_prefix}-domain"
-  execution_role_arn = aws_iam_role.sagemaker-execution-role.arn
-  training_role_arn  = aws_iam_role.sagemaker-training-role.arn
-  inference_role_arn = aws_iam_role.sagemaker-inference-role.arn
-  vpc_id             = module.vpc.vpc_id
-  subnet_ids         = module.vpc.private_subnets
+  domain_name = "${local.name_prefix}-domain"
+  vpc_id      = module.vpc.vpc_id
+  subnet_ids  = module.vpc.private_subnets
 
   # Spot training
   training_instance_type    = "ml.m5.xlarge"
